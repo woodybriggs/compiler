@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <vector>
 
-#include "types.hh"
-#include "array.hh"
+#include "types.h"
+#include "array.h"
 
 #define BITS_IN_BYTE 8
 #define BITS_SHORT sizeof(uint16)*BITS_IN_BYTE
@@ -14,7 +14,7 @@
 #define MegaBytes(N) KiloBytes(N*1024)
 #define GigaBytes(N) MegaBytes(N*1024)
 
-struct Buffer {
+struct String {
     byte * data;
     uint32 length;
 
@@ -22,7 +22,9 @@ struct Buffer {
         bool result = true;
 
         uint32 comparison_string_length = strlen(comparison_string);
-        if (length != comparison_string_length) result = false;
+        if (length != comparison_string_length) {
+            result = false;
+        }
         else {
             uint32 c = 0;
             while (c < length) {
@@ -42,39 +44,41 @@ enum TokenType {
 };
 
 const char * GetTokenTypeName(TokenType type) {
-    if (type == TOKEN_TYPE_INTEGER_LITERAL) return "Integer";
-    else if (type == TOKEN_TYPE_IDENTIFIER) return "Identifier";
-    else if ((char) type == '.')            return "Section Decleration";
-    else if ((char) type == '@')            return "Memory Constant Decleration";
-    else if ((char) type == ':')            return "Label Body";
-    else return (const char *) type;
+         if (type == TOKEN_TYPE_INTEGER_LITERAL) return "Integer";
+    else if (type == TOKEN_TYPE_IDENTIFIER)      return "Identifier";
+    else if ((char) type == '.')                 return "Section Decleration";
+    else if ((char) type == '@')                 return "Memory Constant Decleration";
+    else if ((char) type == ':')                 return "Label Body";
+    else                                         return (const char *) type;
 }
 
 TokenType GetTokenType(byte * c) {
-    if (*c >= '0' && *c <= '9')      return TOKEN_TYPE_INTEGER_LITERAL;
+         if (*c >= '0' && *c <= '9') return TOKEN_TYPE_INTEGER_LITERAL;
     else if (*c >= 'A' && *c <= 'z') return TOKEN_TYPE_IDENTIFIER;
-    else return (TokenType) *c;
+    else                             return (TokenType) *c;
 }
 
 struct LineOfCode {
     uint32 line_number_in_file;
     byte * start;
     byte * end;
+    uint32 token_index_from;
+    uint32 token_index_to;
 };
 
 struct Token {
     TokenType type;
-    Buffer string;
-    uint32 line_number_in_file;
-    uint32 column_number_in_file;
+    String string;
+    uint64 line_number_in_file;
+    uint64 column_number_in_file;
 };
 
 struct Tokenizer {
     byte * at;
 };
 
-Buffer ReadEntireFileIntoMemory(Array<byte> *memory, char * path) {
-    Buffer result = {};
+String ReadEntireFileIntoMemory(Array<byte> *memory, char * path) {
+    String result = {};
 
     FILE* platform_file = fopen(path, "r");
     fseek(platform_file, 0, SEEK_END);
@@ -168,19 +172,19 @@ void Expect(bool assertion, const char * format_string, ...) {
     }
 }
 
-inline bool isNewLine(byte * start) {
+inline bool IsNewLine(byte * start) {
     if (*start == '\n') return true;
     else return false;
 }
 
-inline bool isNullTerminator(byte * start) {
+inline bool IsNullTerminator(byte * start) {
     if (*start == '\0') return true;
     else return false;
 }
 
 
 byte * FindEndOfLine(Tokenizer * tokenizer) {
-    while (!isNewLine(tokenizer->at) && !isNullTerminator(tokenizer->at)){
+    while (!IsNewLine(tokenizer->at) && !IsNullTerminator(tokenizer->at)){
         tokenizer->at += 1;
     }
     return tokenizer->at;
@@ -206,7 +210,7 @@ int main(int argc, char** argv) {
     memory[0xFFFF] = 1;
 
     Array<byte> byte_array = CreateArray<byte>(MegaBytes(4));
-    Buffer input = ReadEntireFileIntoMemory(&byte_array, "./main.sbasm");
+    String input = ReadEntireFileIntoMemory(&byte_array, "./main.sbasm");
     Array<LineOfCode> lines = CreateArray<LineOfCode>(1000);
     Tokenizer tokenizer = { input.data };
     byte * end = input.data + input.length;
@@ -216,124 +220,136 @@ int main(int argc, char** argv) {
         line.start = tokenizer.at;
         line.end = FindEndOfLine(&tokenizer);
         tokenizer.at += 1;
-        line.line_number_in_file = lines.count+1;
+        line.line_number_in_file = lines.count + 1;
         AppendItem(&lines, line);
     }
 
 
-    Array<Token> token_array = CreateArray<Token>(KiloBytes(1));
+    Array<Token> token_array = CreateArray<Token>(KiloBytes(1)); 
 
     for (uint32 line_number = 0; line_number < lines.count; line_number++) {
 
-        LineOfCode line = lines[line_number];
+        LineOfCode * line = lines[line_number];
+        static uint64 last_token_index_on_line = 0;
+        line->token_index_from = last_token_index_on_line;
 
-        Tokenizer tokenizer = { line.start };
-        if (!isNewLine(tokenizer.at)) {
-            while(tokenizer.at < line.end) {
+        Tokenizer tokenizer = { line->start };
+        if (!IsNewLine(tokenizer.at)) {
+            while(tokenizer.at < line->end) {
                 EatAllWhiteSpace(&tokenizer);
-                Token found = ParseToken(&tokenizer, line);
+                Token found = ParseToken(&tokenizer, *line);
                 AppendItem(&token_array, found);
+                last_token_index_on_line += 1;
             }
         }
+
+        line->token_index_to = last_token_index_on_line;
     }
 
-    uint32 token_index = 0;
-    while (token_index < token_array.count) {
-
-        Token current = token_array[token_index];
-
-        switch (current.type)
-        {
-            case '.':
+    for (uint32 line_number = 0;
+         line_number < lines.count;
+         line_number++) {
+        LineOfCode * line = lines[line_number];
+        
+        if (line->token_index_to > line->token_index_from) {
+            
+            for (uint32 token_index = line->token_index_from;
+                 token_index < line->token_index_to;
+                 token_index++)
+            {
+                Token * current = token_array[token_index];
+                switch (current->type)
                 {
-                    Token section_identifer = token_array[token_index+1];
+                    case '.':
+                        {
+                            Token * section_identifer = token_array[token_index+1];
 
-                    Expect(section_identifer.type == TOKEN_TYPE_IDENTIFIER, 
-                        "Expected %s after section decleration (.) instead got %s (%d:%d-%d)\n",
-                        GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
-                        GetTokenTypeName(section_identifer.type),
-                        section_identifer.line_number_in_file,
-                        section_identifer.column_number_in_file,
-                        section_identifer.column_number_in_file + section_identifer.string.length
-                    );
+                            Expect(section_identifer->type == TOKEN_TYPE_IDENTIFIER,
+                                "Expected %s after section decleration (.) instead got %s (%d:%d-%d)\n",
+                                GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
+                                GetTokenTypeName(section_identifer->type),
+                                section_identifer->line_number_in_file,
+                                section_identifer->column_number_in_file,
+                                section_identifer->column_number_in_file + section_identifer->string.length
+                            );
 
-                    Expect((section_identifer.string == "data" || section_identifer.string == "code"),
-                        "Expected section identifier to be either 'data' or 'code' instead got '%.*s (%d:%d-%d)'\n",
-                        section_identifer.string.length,
-                        section_identifer.string.data,
-                        section_identifer.line_number_in_file,
-                        section_identifer.column_number_in_file,
-                        section_identifer.column_number_in_file + section_identifer.string.length
-                    );
+                            Expect((section_identifer->string == "data" || section_identifer->string == "code"),
+                                "Expected section identifier to be either 'data' or 'code' instead got '%.*s (%d:%d-%d)'\n",
+                                section_identifer->string.length,
+                                section_identifer->string.data,
+                                section_identifer->line_number_in_file,
+                                section_identifer->column_number_in_file,
+                                section_identifer->column_number_in_file + section_identifer->string.length
+                            );
 
-                    if (section_identifer.string == "data") {
+                            if (section_identifer->string == "data") {
 
-                        Expect(!State.data_section_declared,
-                            "You have already delcared a data section at (%d:%d-%d) remove duplicate data section at (%d:%d-%d)",
-                            State.data_section_token.line_number_in_file,
-                            State.data_section_token.column_number_in_file,
-                            State.data_section_token.column_number_in_file + State.data_section_token.string.length
-                        );
-                        
-                        State.data_section_token = section_identifer;
-                        State.data_section_declared = true;
-                        State.active_section = SECTION_TYPE_DATA;
-                    } else if (section_identifer.string == "code") {
+                                Expect(!State.data_section_declared,
+                                    "You have already delcared a data section at (%d:%d-%d) remove duplicate data section at (%d:%d-%d)",
+                                    State.data_section_token.line_number_in_file,
+                                    State.data_section_token.column_number_in_file,
+                                    State.data_section_token.column_number_in_file + State.data_section_token.string.length
+                                );
+                                
+                                State.data_section_token = *section_identifer;
+                                State.data_section_declared = true;
+                                State.active_section = SECTION_TYPE_DATA;
 
-                        Expect(!State.code_section_declared,
-                            "You have already delcared a code section at (%d:%d-%d) remove duplicate code section at (%d:%d-%d)",
-                            State.code_section_token.line_number_in_file,
-                            State.code_section_token.column_number_in_file,
-                            State.code_section_token.column_number_in_file + State.code_section_token.string.length
-                        );
+                            } else if (section_identifer->string == "code") {
 
-                        State.code_section_token = section_identifer;
-                        State.code_section_declared = true;
-                        State.active_section = SECTION_TYPE_CODE;
-                    }
-                } 
-            break;
-            case '@': 
-                {
-                    Token identifer = token_array[token_index+1];
+                                Expect(!State.code_section_declared,
+                                    "You have already delcared a code section at (%d:%d-%d) remove duplicate code section at (%d:%d-%d)",
+                                    State.code_section_token.line_number_in_file,
+                                    State.code_section_token.column_number_in_file,
+                                    State.code_section_token.column_number_in_file + State.code_section_token.string.length
+                                );
 
-                    if (State.active_section == SECTION_TYPE_DATA) {
-                        Expect(identifer.type == TOKEN_TYPE_IDENTIFIER, 
-                            "Expected %s after @ but got %s\n", 
-                            GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
-                            GetTokenTypeName(identifer.type)
-                        );
+                                State.code_section_token = *section_identifer;
+                                State.code_section_declared = true;
+                                State.active_section = SECTION_TYPE_CODE;
+                            }
+                        }
+                    break;
+                    case '@':
+                        {
+                            Token * identifer = token_array[token_index+1];
 
-                        Token integer_literal = token_array[token_index+2];
-                        Expect(integer_literal.type == TOKEN_TYPE_INTEGER_LITERAL,
-                            "Expected %s after '@%.*s' but got %s '%.*s'\n",
-                            GetTokenTypeName(TOKEN_TYPE_INTEGER_LITERAL),
-                            identifer.string.length,
-                            identifer.string.data,
-                            GetTokenTypeName(integer_literal.type),
-                            integer_literal.string.length,
-                            integer_literal.string.data
-                        );
-                    } else if (State.active_section == SECTION_TYPE_CODE) {
-                        
-                    }
-                } 
-            break;
-            case ':':
-                {
-                    Token label_identifier = token_array[token_index-1];
+                            if (State.active_section == SECTION_TYPE_DATA) {
+                                Expect(identifer->type == TOKEN_TYPE_IDENTIFIER,
+                                    "Expected %s after @ but got %s\n",
+                                    GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
+                                    GetTokenTypeName(identifer->type)
+                                );
 
-                    
+                                Token * integer_literal = token_array[token_index+2];
+                                Expect(integer_literal->type == TOKEN_TYPE_INTEGER_LITERAL,
+                                    "Expected %s after '@%.*s' but got %s '%.*s'\n",
+                                    GetTokenTypeName(TOKEN_TYPE_INTEGER_LITERAL),
+                                    identifer->string.length,
+                                    identifer->string.data,
+                                    GetTokenTypeName(integer_literal->type),
+                                    integer_literal->string.length,
+                                    integer_literal->string.data
+                                );
+                            } else if (State.active_section == SECTION_TYPE_CODE) {
+                            }
+                        }
+                    break;
+                    case ':':
+                        {
+                            Token * label_identifier = token_array[token_index-1];
+
+                            
+                        }
+                    break;
+                    default:
+                        {
+                            {}
+                        }
+                    break;
                 }
-            break;
-            default:
-                {
-                    {}
-                }
-            break;
+            }
         }
-
-        token_index++;
     }
 
     DestoryArray(&token_array);

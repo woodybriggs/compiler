@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "types.hh"
+#include "types.h"
 
 #ifndef ARRAY_HH
 #define ARRAY_HH
@@ -15,8 +15,8 @@ struct Array {
     uint64 count;
     bool initialised;
 
-    T operator[](uint64 index) {
-        return *(base + sizeof(T) * index);
+    T * operator[](uint64 index) {
+        return (base + (sizeof(T) * index));
     }
 };
 
@@ -78,6 +78,28 @@ void AppendItem(Array<T> *array, T item) {
     T * i = Alloc<T>(array);
     *i = item;
 }
+
+template<class T>
+T * AppendItemReturnPtr(Array<T> *array, T item) {
+    T * i = Alloc<T>(array);
+    *i = item;
+    return i;
+}
+
+template<class T>
+T AppendItemReturnItem(Array<T> *array, T item) {
+    T * i = Alloc<T>(array);
+    *i = item;
+    return *i;
+}
+
+template<class T>
+uint64 AppendItemReturnIndex(Array<T> *array, T item) {
+    T * i = Alloc<T>(array);
+    *i = item;
+    return array->count-1;
+}
+
 
 
 byte * AllocBytes(Array<byte>* array, uint32 length) {
