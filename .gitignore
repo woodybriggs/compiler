@@ -1,0 +1,6 @@
+.vscode
+platform_macos.dSYM
+app
+array
+platform_macos
+.DS_Store

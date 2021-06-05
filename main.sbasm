@@ -1,0 +1,9 @@
+.data
+    @ZERO 256
+
+.code
+    ZERO 1
+    ZERO 1 loop
+
+loop:
+    @ZERO 1
