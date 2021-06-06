@@ -16,7 +16,9 @@ struct Array {
     bool initialised;
 
     T * operator[](uint64 index) {
-        return (base + (sizeof(T) * index));
+        T * item = (base + (sizeof(T) * index));
+        assert(item < next_free);
+        return item;
     }
 };
 
@@ -99,8 +101,6 @@ uint64 AppendItemReturnIndex(Array<T> *array, T item) {
     *i = item;
     return array->count-1;
 }
-
-
 
 byte * AllocBytes(Array<byte>* array, uint32 length) {
     byte * result = 0;

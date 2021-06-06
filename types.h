@@ -1,9 +1,9 @@
-#include <inttypes.h>
+#include <stdint.h>
 
 #ifndef TYPES_H
 #define TYPES_H
 
-typedef char   byte;
+typedef char      byte;
 typedef uint16_t  uint16;
 typedef uint32_t  uint32;
 typedef uint64_t  uint64;

@@ -1,7 +1,7 @@
-.data
-    @ZERO 256
+section data
+    @ZERO 0b11b11
 
-.code
+section code
     ZERO 1
     ZERO 1 loop
 

@@ -1,9 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <vector>
 
 #include "types.h"
 #include "array.h"
+#include "simple_string.h"
+#include "parser.h"
+#include "expect.h"
 
 #define BITS_IN_BYTE 8
 #define BITS_SHORT sizeof(uint16)*BITS_IN_BYTE
@@ -13,69 +17,6 @@
 #define KiloBytes(N) Bytes(N*1024)
 #define MegaBytes(N) KiloBytes(N*1024)
 #define GigaBytes(N) MegaBytes(N*1024)
-
-struct String {
-    byte * data;
-    uint32 length;
-
-    bool operator==(const char * comparison_string) {
-        bool result = true;
-
-        uint32 comparison_string_length = strlen(comparison_string);
-        if (length != comparison_string_length) {
-            result = false;
-        }
-        else {
-            uint32 c = 0;
-            while (c < length) {
-                if (data[c] != comparison_string[c]) result = false;
-                c += 1;
-            }
-        }
-        return result;
-    }
-};
-
-enum TokenType {
-    // ... reserved for ASCII Token Types
-    TOKEN_TYPE_UNKNOWN = 256,
-    TOKEN_TYPE_INTEGER_LITERAL,
-    TOKEN_TYPE_IDENTIFIER,
-};
-
-const char * GetTokenTypeName(TokenType type) {
-         if (type == TOKEN_TYPE_INTEGER_LITERAL) return "Integer";
-    else if (type == TOKEN_TYPE_IDENTIFIER)      return "Identifier";
-    else if ((char) type == '.')                 return "Section Decleration";
-    else if ((char) type == '@')                 return "Memory Constant Decleration";
-    else if ((char) type == ':')                 return "Label Body";
-    else                                         return (const char *) type;
-}
-
-TokenType GetTokenType(byte * c) {
-         if (*c >= '0' && *c <= '9') return TOKEN_TYPE_INTEGER_LITERAL;
-    else if (*c >= 'A' && *c <= 'z') return TOKEN_TYPE_IDENTIFIER;
-    else                             return (TokenType) *c;
-}
-
-struct LineOfCode {
-    uint32 line_number_in_file;
-    byte * start;
-    byte * end;
-    uint32 token_index_from;
-    uint32 token_index_to;
-};
-
-struct Token {
-    TokenType type;
-    String string;
-    uint64 line_number_in_file;
-    uint64 column_number_in_file;
-};
-
-struct Tokenizer {
-    byte * at;
-};
 
 String ReadEntireFileIntoMemory(Array<byte> *memory, char * path) {
     String result = {};
@@ -91,106 +32,6 @@ String ReadEntireFileIntoMemory(Array<byte> *memory, char * path) {
     return result;
 }
 
-
-bool32 IsWhiteSpace(byte * to_test) {
-         if (*to_test == ' ')  return true;
-    else if (*to_test == '\t') return true;
-    else if (*to_test == '\r') return true;
-    else if (*to_test == '\n') return true;
-    else                       return false;
-}
-
-void EatAllWhiteSpace(Tokenizer * tokenizer) {
-    while (IsWhiteSpace(tokenizer->at)) {
-        tokenizer->at += 1;
-    }
-}
-
-byte * FindEndOfToken(byte * token_start, TokenType token_type) {
-    byte * token_end = token_start + 1;
-    while (GetTokenType(token_end) == token_type && (char) *token_end != '\0') {
-        token_end++;
-    }
-    return token_end;
-}
-
-Token ParseToken(Tokenizer * tokenizer, LineOfCode line) {
-    Token result = {};
-    byte * token_start = tokenizer->at;
-    result.type = GetTokenType(tokenizer->at);
-    result.line_number_in_file = line.line_number_in_file;
-    result.column_number_in_file = token_start - line.start;
-
-    switch (result.type)
-    {
-        case '.': 
-        {
-            result.string.data = token_start;
-            result.string.length = 1;
-            tokenizer->at += 1;
-        } break;
-        case ':': 
-        {
-            result.string.data = token_start;
-            result.string.length = 1;
-            tokenizer->at += 1;
-        } break;
-        case '@': 
-        {
-            result.string.data = token_start;
-            result.string.length = 1;
-            tokenizer->at += 1;
-        } break;
-        case TOKEN_TYPE_INTEGER_LITERAL:
-        {
-            result.string.data = tokenizer->at;
-            result.string.length = FindEndOfToken(tokenizer->at, TOKEN_TYPE_INTEGER_LITERAL) - token_start;
-            tokenizer->at += result.string.length;
-        } break;
-        case TOKEN_TYPE_IDENTIFIER:
-        {
-            result.string.data = tokenizer->at;
-            result.string.length = FindEndOfToken(tokenizer->at, TOKEN_TYPE_IDENTIFIER) - token_start;
-            tokenizer->at += result.string.length;
-        } break;
-        default:
-        {
-            {}
-        }
-    }
-
-    return result;
-}
-
-void Expect(bool assertion, const char * format_string, ...) {
-    if (!assertion) {
-        va_list args;
-        va_start(args, format_string);
-        vfprintf(stderr, format_string, args);
-        va_end(args);
-        exit(SIGTERM);
-    }
-}
-
-inline bool IsNewLine(byte * start) {
-    if (*start == '\n') return true;
-    else return false;
-}
-
-inline bool IsNullTerminator(byte * start) {
-    if (*start == '\0') return true;
-    else return false;
-}
-
-
-byte * FindEndOfLine(Tokenizer * tokenizer) {
-    while (!IsNewLine(tokenizer->at) && !IsNullTerminator(tokenizer->at)){
-        tokenizer->at += 1;
-    }
-    return tokenizer->at;
-}
-
-
 enum SectionType {
     SECTION_TYPE_DATA,
     SECTION_TYPE_CODE
@@ -203,6 +44,7 @@ struct ParseState {
     Token code_section_token;
     SectionType active_section;
 } State = {};
+
 
 int main(int argc, char** argv) {
 
@@ -258,22 +100,14 @@ int main(int argc, char** argv) {
                  token_index++)
             {
                 Token * current = token_array[token_index];
+                assert(current->string.length < 20);
                 switch (current->type)
                 {
-                    case '.':
+                    case TOKEN_TYPE_SECTION:
                         {
                             Token * section_identifer = token_array[token_index+1];
 
-                            Expect(section_identifer->type == TOKEN_TYPE_IDENTIFIER,
-                                "Expected %s after section decleration (.) instead got %s (%d:%d-%d)\n",
-                                GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
-                                GetTokenTypeName(section_identifer->type),
-                                section_identifer->line_number_in_file,
-                                section_identifer->column_number_in_file,
-                                section_identifer->column_number_in_file + section_identifer->string.length
-                            );
-
-                            Expect((section_identifer->string == "data" || section_identifer->string == "code"),
+                            Expect(section_identifer->type == TOKEN_TYPE_DATA_SECTION || section_identifer->type == TOKEN_TYPE_CODE_SECTION,
                                 "Expected section identifier to be either 'data' or 'code' instead got '%.*s (%d:%d-%d)'\n",
                                 section_identifer->string.length,
                                 section_identifer->string.data,
@@ -282,7 +116,7 @@ int main(int argc, char** argv) {
                                 section_identifer->column_number_in_file + section_identifer->string.length
                             );
 
-                            if (section_identifer->string == "data") {
+                            if (section_identifer->type == TOKEN_TYPE_DATA_SECTION) {
 
                                 Expect(!State.data_section_declared,
                                     "You have already delcared a data section at (%d:%d-%d) remove duplicate data section at (%d:%d-%d)",
@@ -295,7 +129,7 @@ int main(int argc, char** argv) {
                                 State.data_section_declared = true;
                                 State.active_section = SECTION_TYPE_DATA;
 
-                            } else if (section_identifer->string == "code") {
+                            } else if (section_identifer->type == TOKEN_TYPE_CODE_SECTION) {
 
                                 Expect(!State.code_section_declared,
                                     "You have already delcared a code section at (%d:%d-%d) remove duplicate code section at (%d:%d-%d)",
@@ -314,24 +148,16 @@ int main(int argc, char** argv) {
                         {
                             Token * identifer = token_array[token_index+1];
 
-                            if (State.active_section == SECTION_TYPE_DATA) {
+                            if (State.active_section == SECTION_TYPE_DATA) 
+                            {
                                 Expect(identifer->type == TOKEN_TYPE_IDENTIFIER,
                                     "Expected %s after @ but got %s\n",
                                     GetTokenTypeName(TOKEN_TYPE_IDENTIFIER),
                                     GetTokenTypeName(identifer->type)
                                 );
-
-                                Token * integer_literal = token_array[token_index+2];
-                                Expect(integer_literal->type == TOKEN_TYPE_INTEGER_LITERAL,
-                                    "Expected %s after '@%.*s' but got %s '%.*s'\n",
-                                    GetTokenTypeName(TOKEN_TYPE_INTEGER_LITERAL),
-                                    identifer->string.length,
-                                    identifer->string.data,
-                                    GetTokenTypeName(integer_literal->type),
-                                    integer_literal->string.length,
-                                    integer_literal->string.data
-                                );
-                            } else if (State.active_section == SECTION_TYPE_CODE) {
+                            } 
+                            else if (State.active_section == SECTION_TYPE_CODE) 
+                            {
                             }
                         }
                     break;
