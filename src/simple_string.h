@@ -16,7 +16,7 @@ struct String
     }
     
     String(char * _data, unsigned long long _length) {
-        length = length;
+        length = _length;
         data = _data;
     }
     

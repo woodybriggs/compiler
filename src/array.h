@@ -43,7 +43,7 @@ void DestoryArray(Array<T> *array) {
     free(array->base);
 }
 
-void ByteCopy(byte * destination, byte * source, uint32 length) {
+void ByteCopy(byte * destination, byte * source, uint64 length) {
     for (uint32 i = 0; i < length; i++) {
         destination[i] = source[i];
     }
@@ -102,7 +102,7 @@ uint64 AppendItemReturnIndex(Array<T> *array, T item) {
     return array->count-1;
 }
 
-byte * AllocBytes(Array<byte>* array, uint32 length) {
+byte * AllocBytes(Array<byte>* array, uint64 length) {
     byte * result = 0;
     if (((array->next_free + length) < array->end)) {
         result = array->next_free;

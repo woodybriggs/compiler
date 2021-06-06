@@ -11,11 +11,11 @@ struct Tokenizer {
 };
 
 struct LineOfCode {
-    uint32 line_number_in_file;
+    uint64 line_number_in_file;
     byte * start;
     byte * end;
-    uint32 token_index_from;
-    uint32 token_index_to;
+    uint64 token_index_from;
+    uint64 token_index_to;
 };
 
 enum TokenType {

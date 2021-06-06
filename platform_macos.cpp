@@ -32,6 +32,10 @@ String ReadEntireFileIntoMemory(Array<byte> *memory, char * path) {
     return result;
 }
 
+String ReadEntireFileIntoMemory(Array<byte> *memory, const char * path) {
+    return ReadEntireFileIntoMemory(memory, (char *) path);
+}
+
 enum SectionType {
     SECTION_TYPE_DATA,
     SECTION_TYPE_CODE
@@ -95,7 +99,7 @@ int main(int argc, char** argv) {
         
         if (line->token_index_to > line->token_index_from) {
             
-            for (uint32 token_index = line->token_index_from;
+            for (uint64 token_index = line->token_index_from;
                  token_index < line->token_index_to;
                  token_index++)
             {
@@ -163,7 +167,7 @@ int main(int argc, char** argv) {
                     break;
                     case ':':
                         {
-                            Token * label_identifier = token_array[token_index-1];
+                            //Token * label_identifier = token_array[token_index-1];
 
                             
                         }
